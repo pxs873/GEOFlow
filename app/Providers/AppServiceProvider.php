@@ -11,6 +11,7 @@ use App\Services\GeoFlow\JobQueueService;
 use App\Services\GeoFlow\TaskLifecycleService;
 use App\Services\GeoFlow\TaskMonitoringQueryService;
 use App\View\Composers\SiteLayoutComposer;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
@@ -33,18 +34,41 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $appUrl = rtrim((string) config('app.url'), '/');
+
+        if (app()->environment('production') && $appUrl !== '' && str_starts_with($appUrl, 'https://')) {
+            URL::forceRootUrl($appUrl);
+            URL::forceScheme('https');
+        }
+
         View::composer(['site.layout', 'theme.*.layout'], SiteLayoutComposer::class);
 
         View::composer('admin.layouts.app', function ($view): void {
-            $admin = auth('admin')->user();
-            $view->with(
-                'adminWelcomeModalPayload',
-                $admin instanceof Admin ? app(AdminWelcomeModalService::class)->buildModalPayload($admin) : null
-            );
-            $view->with(
-                'adminUpdateNotificationPayload',
-                $admin instanceof Admin ? app(AdminUpdateMetadataService::class)->buildNotificationPayload() : null
-            );
+            try {
+                $admin = auth('admin')->user();
+                $welcomePayload = null;
+                $updatePayload = null;
+
+                if ($admin instanceof Admin) {
+                    try {
+                        $welcomePayload = app(AdminWelcomeModalService::class)->buildModalPayload($admin);
+                    } catch (\Throwable) {
+                        $welcomePayload = null;
+                    }
+
+                    try {
+                        $updatePayload = app(AdminUpdateMetadataService::class)->buildNotificationPayload();
+                    } catch (\Throwable) {
+                        $updatePayload = null;
+                    }
+                }
+
+                $view->with('adminWelcomeModalPayload', $welcomePayload);
+                $view->with('adminUpdateNotificationPayload', $updatePayload);
+            } catch (\Throwable) {
+                $view->with('adminWelcomeModalPayload', null);
+                $view->with('adminUpdateNotificationPayload', null);
+            }
         });
     }
 }

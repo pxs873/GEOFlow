@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Temu entry consulting illustration</title>
+  <desc id="desc">A clean business illustration for Temu marketplace onboarding content.</desc>
+  <rect width="1200" height="630" fill="#fff7f1"/>
+  <rect x="74" y="72" width="1052" height="486" rx="28" fill="#ffffff" stroke="#ead8cc"/>
+  <rect x="150" y="140" width="300" height="245" rx="26" fill="#ff6a00"/>
+  <rect x="195" y="197" width="210" height="48" rx="24" fill="#fff0e6"/>
+  <rect x="195" y="276" width="150" height="42" rx="21" fill="#fff0e6"/>
+  <circle cx="397" cy="340" r="20" fill="#fff0e6"/>
+  <rect x="510" y="150" width="510" height="42" rx="21" fill="#ffe0cc"/>
+  <rect x="510" y="228" width="450" height="31" rx="16" fill="#fff0e8"/>
+  <rect x="510" y="290" width="492" height="31" rx="16" fill="#fff0e8"/>
+  <rect x="510" y="352" width="388" height="31" rx="16" fill="#fff0e8"/>
+  <text x="150" y="500" font-family="Arial, sans-serif" font-size="54" font-weight="700" fill="#412817">Temu 入驻</text>
+  <text x="450" y="500" font-family="Arial, sans-serif" font-size="34" fill="#795743">平台招商 · 供货链路 · 合规准备</text>
+</svg>

@@ -250,6 +250,9 @@ class TaskLifecycleService
             // 手动“立即执行”场景下，不把 next_run_at 强行置为 now，
             // 避免与手动入队叠加导致一次点击触发两次执行。
             $this->activateTask($taskId, ! $enqueueNow);
+            if ($enqueueNow) {
+                $this->repairPublishClockForManualStart($taskId);
+            }
             $jobId = null;
             if ($enqueueNow) {
                 $jobId = $this->queueService->enqueueTaskJob($taskId, 'generate_article', ['source' => 'api_manual_start']);
@@ -603,6 +606,30 @@ class TaskLifecycleService
 
         Task::query()->whereKey($taskId)->update($updates);
         $this->queueService->initializeTaskSchedule($taskId);
+    }
+
+    /**
+     * 手动启动时，如果已有可发布草稿但发布时间被拖到了未来，则把发布时间拉回当前。
+     *
+     * 这样可以让后台的“启动/继续执行”动作真正把卡住的发布节奏恢复到现在。
+     */
+    private function repairPublishClockForManualStart(int $taskId): void
+    {
+        $publishableDrafts = Article::query()
+            ->where('task_id', $taskId)
+            ->where('status', 'draft')
+            ->whereIn('review_status', ['approved', 'auto_approved'])
+            ->whereNull('deleted_at')
+            ->count();
+
+        if ($publishableDrafts <= 0) {
+            return;
+        }
+
+        Task::query()->whereKey($taskId)->update([
+            'next_publish_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     /**

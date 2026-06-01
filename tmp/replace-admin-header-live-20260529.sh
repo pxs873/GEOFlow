@@ -1,3 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /opt/geoflow
+
+echo "[1/4] Replacing admin header with current repo version..."
+sudo -n tee resources/views/admin/partials/header.blade.php >/dev/null <<'EOF'
 @php
     $currentAdmin = auth('admin')->user();
     $adminBrandName = $adminBrandName ?? \App\Support\AdminWeb::siteName();
@@ -18,7 +25,6 @@
     $notificationStatus = (string) ($updateState['status'] ?? 'disabled');
     $menu = [
         'dashboard' => ['route' => 'admin.dashboard', 'name' => __('admin.nav.dashboard')],
-        'analytics' => ['route' => 'admin.analytics', 'name' => __('admin.nav.analytics')],
         'tasks' => ['route' => 'admin.tasks.index', 'name' => __('admin.nav.tasks')],
         'articles' => ['route' => 'admin.articles.index', 'name' => __('admin.nav.articles')],
         'materials' => ['route' => 'admin.materials.index', 'name' => __('admin.nav.materials')],
@@ -29,7 +35,6 @@
         $menu['admin_users'] = ['route' => 'admin.admin-users.index', 'name' => __('admin.nav.admin_users')];
     }
     $subMap = [
-        'admin.analytics' => 'analytics',
         'admin.tasks.create' => 'tasks',
         'admin.tasks.edit' => 'tasks',
         'admin.articles.create' => 'articles',
@@ -291,3 +296,16 @@
         }
     });
 </script>
+
+EOF
+
+echo "[2/4] Rebuilding app image..."
+sudo -n docker compose --env-file .env.prod -f docker-compose.prod.yml build app
+
+echo "[3/4] Recreating PHP and web services..."
+sudo -n docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --force-recreate app web queue scheduler reverb
+
+echo "[4/4] Clearing and warming caches..."
+sudo -n docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T app php artisan optimize:clear
+sudo -n docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T app php artisan view:cache
+echo "DONE"

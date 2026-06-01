@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\AdminWelcomeController;
 use App\Http\Controllers\Admin\AiModelController;
 use App\Http\Controllers\Admin\AiPromptController;
 use App\Http\Controllers\Admin\AiSpecialPromptController;
+use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\ApiTokenController;
 use App\Http\Controllers\Admin\ArticleController;
 use App\Http\Controllers\Admin\AuthorController;
@@ -26,15 +27,19 @@ use App\Http\Controllers\Admin\SiteSettingsController;
 use App\Http\Controllers\Admin\TaskController;
 use App\Http\Controllers\Admin\TitleLibraryController;
 use App\Http\Controllers\Admin\UrlImportController;
+use App\Models\Article;
+use App\Models\Category;
 use App\Http\Controllers\Site\ArchiveController;
 use App\Http\Controllers\Site\ArticleController as SiteArticleController;
 use App\Http\Controllers\Site\CategoryController as SiteCategoryController;
+use App\Http\Controllers\Site\ContactController;
 use App\Http\Controllers\Site\HomeController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['site.locale'])->group(function (): void {
     Route::get('/', [HomeController::class, 'index'])->name('site.home');
+    Route::get('/contact', [ContactController::class, 'show'])->name('site.contact');
     Route::get('/archive', [ArchiveController::class, 'index'])->name('site.archive');
     Route::get('/archive/{year}/{month}', [ArchiveController::class, 'month'])
         ->name('site.archive.month')
@@ -42,6 +47,81 @@ Route::middleware(['site.locale'])->group(function (): void {
     Route::get('/category/{slug}', [SiteCategoryController::class, 'show'])->name('site.category');
     Route::get('/article/{slug}', [SiteArticleController::class, 'show'])->name('site.article');
 });
+
+Route::get('/sitemap.xml', function () {
+    $baseUrl = rtrim((string) config('app.url'), '/');
+
+    if (in_array(request()->getHost(), ['globalentrypro.com', 'www.globalentrypro.com'], true)) {
+        $baseUrl = 'https://'.request()->getHost();
+    } elseif ($baseUrl === '') {
+        $baseUrl = rtrim(request()->getSchemeAndHttpHost(), '/');
+    }
+
+    $absoluteUrl = function (string $path) use ($baseUrl): string {
+        return $baseUrl.'/'.ltrim($path, '/');
+    };
+
+    $urls = collect([
+        [
+            'loc' => $absoluteUrl(route('site.home', [], false)),
+            'lastmod' => now()->toAtomString(),
+            'changefreq' => 'daily',
+            'priority' => '1.0',
+        ],
+        [
+            'loc' => $absoluteUrl(route('site.contact', [], false)),
+            'lastmod' => now()->toAtomString(),
+            'changefreq' => 'weekly',
+            'priority' => '0.9',
+        ],
+    ]);
+
+    Category::query()
+        ->whereHas('articles', fn ($query) => $query->published())
+        ->orderBy('id')
+        ->get(['slug', 'created_at'])
+        ->each(function (Category $category) use (&$urls, $absoluteUrl): void {
+            $urls->push([
+                'loc' => $absoluteUrl(route('site.category', $category->slug, false)),
+                'lastmod' => optional($category->created_at)->toAtomString() ?: now()->toAtomString(),
+                'changefreq' => 'weekly',
+                'priority' => '0.8',
+            ]);
+        });
+
+    Article::query()
+        ->published()
+        ->orderByDesc('published_at')
+        ->orderByDesc('id')
+        ->get(['slug', 'updated_at', 'published_at'])
+        ->each(function (Article $article) use (&$urls, $absoluteUrl): void {
+            $urls->push([
+                'loc' => $absoluteUrl(route('site.article', $article->slug, false)),
+                'lastmod' => optional($article->updated_at ?? $article->published_at)->toAtomString() ?: now()->toAtomString(),
+                'changefreq' => 'monthly',
+                'priority' => '0.7',
+            ]);
+        });
+
+    $xml = collect(['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'])
+        ->merge($urls->map(function (array $url): string {
+            return sprintf(
+                "    <url>\n        <loc>%s</loc>\n        <lastmod>%s</lastmod>\n        <changefreq>%s</changefreq>\n        <priority>%s</priority>\n    </url>",
+                e($url['loc']),
+                e($url['lastmod']),
+                e($url['changefreq']),
+                e($url['priority'])
+            );
+        }))
+        ->push('</urlset>')
+        ->implode("\n");
+
+    return response($xml, 200)
+        ->header('Content-Type', 'application/xml; charset=UTF-8')
+        ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+        ->header('Pragma', 'no-cache')
+        ->header('Expires', '0');
+})->name('site.sitemap');
 
 $adminPrefix = trim((string) config('geoflow.admin_base_path', '/geo_admin'), '/');
 
@@ -67,6 +147,7 @@ Route::prefix($adminPrefix)->name('admin.')->middleware(['admin.locale'])->group
         Route::post('logout', [AdminAuthController::class, 'logout'])->name('logout');
         Route::post('welcome/dismiss', [AdminWelcomeController::class, 'dismiss'])->name('welcome.dismiss');
         Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+        Route::get('analytics', [AnalyticsController::class, 'index'])->name('analytics');
 
         // 任务管理（Blade 新路径）
         Route::prefix('tasks')->name('tasks.')->group(function () {

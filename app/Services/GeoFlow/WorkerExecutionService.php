@@ -71,10 +71,10 @@ class WorkerExecutionService
 
         $titleRow = $this->pickTitle($task);
         $author = $this->pickAuthor($task);
-        $category = $this->pickCategory($task);
+        $keyword = (string) ($titleRow->keyword ?? '');
+        $category = $this->pickCategory($task, (string) $titleRow->title, $keyword);
         $prompt = $task->prompt_id ? Prompt::query()->find((int) $task->prompt_id) : null;
 
-        $keyword = (string) ($titleRow->keyword ?? '');
         $knowledgeContext = $this->resolveKnowledgeContext($task, (string) $titleRow->title, $keyword);
         $contentPrompt = $this->buildContentPrompt((string) $titleRow->title, $keyword, $prompt?->content, $knowledgeContext);
         $generation = $this->generateContentWithModelSelection($task, $contentPrompt);
@@ -457,13 +457,116 @@ class WorkerExecutionService
         );
     }
 
-    private function pickCategory(Task $task): ?Category
+    private function pickCategory(Task $task, string $title = '', string $keyword = ''): ?Category
     {
         if (($task->category_mode ?? 'smart') === 'fixed' && (int) ($task->fixed_category_id ?? 0) > 0) {
             return Category::query()->find((int) $task->fixed_category_id);
         }
 
-        return Category::query()->orderBy('sort_order')->orderBy('id')->first();
+        $categories = Category::query()
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+
+        if ($categories->isEmpty()) {
+            return null;
+        }
+
+        if (($task->category_mode ?? 'smart') === 'random') {
+            return $categories->random();
+        }
+
+        $searchText = $this->normalizeCategorySearchText(trim($title.' '.$keyword));
+        $bestCategory = null;
+        $bestScore = 0;
+
+        foreach ($categories as $category) {
+            $score = $this->scoreCategoryMatch($category, $searchText);
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $bestCategory = $category;
+            }
+        }
+
+        if ($bestCategory instanceof Category && $bestScore > 0) {
+            return $bestCategory;
+        }
+
+        return $categories->first();
+    }
+
+    private function scoreCategoryMatch(Category $category, string $searchText): int
+    {
+        $categoryText = $this->normalizeCategorySearchText(implode(' ', array_filter([
+            (string) $category->name,
+            (string) $category->slug,
+            (string) $category->description,
+        ])));
+
+        if ($categoryText === '' || $searchText === '') {
+            return 0;
+        }
+
+        $score = 0;
+
+        foreach ($this->categorySearchTerms($category) as $term) {
+            if ($term === '' || mb_strlen($term, 'UTF-8') < 2) {
+                continue;
+            }
+
+            if (str_contains($searchText, $term)) {
+                $score += 10 + min(15, mb_strlen($term, 'UTF-8'));
+            }
+        }
+
+        foreach (preg_split('/\s+/u', $categoryText, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $token) {
+            if (mb_strlen($token, 'UTF-8') < 2) {
+                continue;
+            }
+
+            if (str_contains($searchText, $token)) {
+                $score += 4;
+            }
+        }
+
+        return $score;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function categorySearchTerms(Category $category): array
+    {
+        $text = $this->normalizeCategorySearchText(implode(' ', array_filter([
+            (string) $category->name,
+            (string) $category->slug,
+            (string) $category->description,
+        ])));
+
+        $terms = preg_split('/\s+/u', $text, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        $platformTerms = [];
+        if (str_contains($text, 'amazon') || str_contains($text, '亚马逊')) {
+            $platformTerms = ['amazon', '亚马逊', 'amz', 'amazon入驻'];
+        } elseif (str_contains($text, 'walmart') || str_contains($text, '沃尔玛')) {
+            $platformTerms = ['walmart', '沃尔玛', 'walmart入驻'];
+        } elseif (str_contains($text, 'tiktok') || str_contains($text, '抖音') || str_contains($text, 'tik tok')) {
+            $platformTerms = ['tiktok', 'tiktok shop', 'tik tok', '抖音', '抖音小店', 'tiktokshop'];
+        } elseif (str_contains($text, 'ebay') || str_contains($text, '易贝')) {
+            $platformTerms = ['ebay', '易贝', 'ebay入驻'];
+        } elseif (str_contains($text, 'temu') || str_contains($text, '拼多多')) {
+            $platformTerms = ['temu', 'temu入驻', 'temu平台招商', '拼多多', '拼多多跨境'];
+        }
+
+        return array_values(array_unique(array_merge($terms, $platformTerms)));
+    }
+
+    private function normalizeCategorySearchText(string $text): string
+    {
+        $text = mb_strtolower(trim($text), 'UTF-8');
+        $text = preg_replace('/[^\p{L}\p{N}\x{4e00}-\x{9fa5}]+/u', ' ', $text) ?? $text;
+
+        return trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
     }
 
     /**

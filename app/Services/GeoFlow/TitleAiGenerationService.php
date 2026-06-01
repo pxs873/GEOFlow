@@ -2,12 +2,11 @@
 
 namespace App\Services\GeoFlow;
 
+use App\Ai\Agents\MarkdownContentWriterAgent;
 use App\Models\AiModel;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use App\Support\GeoFlow\OpenAiRuntimeProvider;
 use Throwable;
-
-use function Laravel\Ai\agent;
 
 /**
  * 标题 AI 生成服务。
@@ -88,7 +87,8 @@ class TitleAiGenerationService
             throw new \RuntimeException('ai_key_missing');
         }
 
-        $providerName = OpenAiRuntimeProvider::registerProvider('title_ai', 'openai', $providerUrl, $apiKey);
+        $driver = OpenAiRuntimeProvider::resolveChatDriver($providerUrl, (string) ($aiModel->model_id ?? ''));
+        $providerName = OpenAiRuntimeProvider::registerProvider('title_ai', $driver, $providerUrl, $apiKey);
 
         $styleMap = [
             'professional' => '专业严谨的',
@@ -107,8 +107,10 @@ class TitleAiGenerationService
         }
         $userPrompt .= "要求：\n1. 每个标题独占一行\n2. 标题要有吸引力和可读性\n3. 适合搜索引擎优化\n4. 不要添加序号或其他标记\n5. 直接输出标题内容";
 
+        $agent = new MarkdownContentWriterAgent($systemPrompt);
+
         try {
-            $response = agent($systemPrompt)->prompt(
+            $response = $agent->prompt(
                 $userPrompt,
                 [],
                 $providerName,

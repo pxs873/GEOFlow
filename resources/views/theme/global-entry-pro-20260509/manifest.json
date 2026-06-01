@@ -1,0 +1,28 @@
+{
+  "id": "global-entry-pro-20260509",
+  "name": "Global Entry Pro Service",
+  "version": "1.0.0",
+  "description": "A service-business GEOFlow theme for overseas e-commerce marketplace entry content, with platform columns, consulting CTAs, and clean article pages.",
+  "templates": [
+    "layout",
+    "home",
+    "category",
+    "article"
+  ],
+  "notes": [
+    "Designed for China-based merchants who need Amazon, Walmart, TikTok Shop, eBay, Temu, and other overseas marketplace entry guidance.",
+    "Keeps GEOFlow Blade variables, SEO meta fields, markdown HTML rendering, category navigation, footer, article routes, and optional article ad data intact.",
+    "Adds public-facing consulting CTAs with WeChat douyinbaobai168 without changing backend data contracts."
+  ],
+  "base_theme_id": "toutiao-news-20260426",
+  "target_theme_id": "global-entry-pro-20260509",
+  "mode": "theme",
+  "session_state": "published",
+  "created_at": "2026-05-07T21:48:48+08:00",
+  "preview_routes": [
+    "/",
+    "/category/{slug}",
+    "/article/{slug}",
+    "/archive"
+  ]
+}

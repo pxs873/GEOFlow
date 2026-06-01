@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Walmart entry consulting illustration</title>
+  <desc id="desc">A clean business illustration for Walmart marketplace onboarding content.</desc>
+  <rect width="1200" height="630" fill="#f5f8fb"/>
+  <rect x="74" y="72" width="1052" height="486" rx="28" fill="#ffffff" stroke="#d5e0e8"/>
+  <circle cx="232" cy="214" r="78" fill="#1677c8"/>
+  <g fill="#ffc547">
+    <circle cx="232" cy="101" r="24"/><circle cx="329" cy="158" r="24"/><circle cx="329" cy="270" r="24"/><circle cx="232" cy="327" r="24"/><circle cx="135" cy="270" r="24"/><circle cx="135" cy="158" r="24"/>
+  </g>
+  <rect x="430" y="144" width="560" height="44" rx="22" fill="#dceaf5"/>
+  <rect x="430" y="225" width="460" height="32" rx="16" fill="#edf4f8"/>
+  <rect x="430" y="288" width="500" height="32" rx="16" fill="#edf4f8"/>
+  <rect x="430" y="351" width="390" height="32" rx="16" fill="#edf4f8"/>
+  <text x="150" y="470" font-family="Arial, sans-serif" font-size="54" font-weight="700" fill="#17324a">Walmart 入驻</text>
+  <text x="540" y="470" font-family="Arial, sans-serif" font-size="34" fill="#536a7b">美国平台招商顾问</text>
+</svg>

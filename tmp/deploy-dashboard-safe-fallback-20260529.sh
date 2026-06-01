@@ -1,3 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+sudo -v
+cd /opt/geoflow
+echo '[1/3] Writing DashboardController...'
+sudo mkdir -p app/Http/Controllers/Admin
+sudo tee app/Http/Controllers/Admin/DashboardController.php >/dev/null <<'EOF_DASHBOARD_CONTROLLER_PHP'
 <?php
 
 namespace App\Http\Controllers\Admin;
@@ -764,3 +771,11 @@ HTML;
         ];
     }
 }
+EOF_DASHBOARD_CONTROLLER_PHP
+echo '[2/3] Rebuilding app container...'
+sudo docker compose --env-file .env.prod -f docker-compose.prod.yml build app
+echo '[3/3] Restarting app services and clearing caches...'
+sudo docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --force-recreate app queue scheduler reverb
+sudo docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T app php artisan optimize:clear
+sudo docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T app php artisan view:cache
+echo 'DONE'
