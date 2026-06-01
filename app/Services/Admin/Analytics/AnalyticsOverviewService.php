@@ -4,6 +4,7 @@ namespace App\Services\Admin\Analytics;
 
 use App\Models\AiModel;
 use App\Models\Article;
+use App\Models\ArticleDistribution;
 use App\Models\Author;
 use App\Models\Image;
 use App\Models\ImageLibrary;
@@ -17,7 +18,6 @@ use App\Models\Title;
 use App\Models\TitleLibrary;
 use App\Models\UrlImportJob;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -73,18 +73,9 @@ class AnalyticsOverviewService
     public function kpis(AnalyticsFilter $filter): array
     {
         $articles = $this->filteredArticles($filter);
-        $published = $this->filteredArticles($filter)
-            ->where('status', 'published')
-            ->whereBetween('published_at', [$filter->start(), $filter->end()]);
+        $published = $this->publishedArticlesBetween($filter, $filter->start(), $filter->end());
         $taskRuns = $this->filteredTaskRuns($filter);
-        $distributionFailed = 0;
-        $distributionPending = 0;
-
-        if ($this->hasDistributionTables()) {
-            $distributions = $this->filteredDistributions($filter);
-            $distributionFailed = (int) (clone $distributions)->where('status', 'failed')->count();
-            $distributionPending = (int) (clone $distributions)->whereIn('status', ['queued', 'sending'])->count();
-        }
+        $distributions = $this->filteredDistributions($filter);
 
         return [
             'articles' => (int) $articles->count(),
@@ -92,9 +83,9 @@ class AnalyticsOverviewService
             'running_tasks' => (int) (clone $taskRuns)->where('status', 'running')->count(),
             'failed_tasks' => (int) (clone $taskRuns)->where('status', 'failed')->count(),
             'ai_calls' => (int) AiModel::query()->sum('used_today'),
-            'distribution_failed' => $distributionFailed,
-            'distribution_pending' => $distributionPending,
-            'total_views' => (int) $this->filteredArticles($filter)->sum('view_count'),
+            'distribution_failed' => (int) (clone $distributions)->where('status', 'failed')->count(),
+            'distribution_pending' => (int) (clone $distributions)->whereIn('status', ['queued', 'sending'])->count(),
+            'total_views' => $this->filteredViewCount($filter),
         ];
     }
 
@@ -112,7 +103,7 @@ class AnalyticsOverviewService
             return [
                 'date' => $day->toDateString(),
                 'created' => (int) $this->filteredArticles($filter)->whereBetween('created_at', [$start, $end])->count(),
-                'published' => (int) $this->filteredArticles($filter)->whereBetween('published_at', [$start, $end])->count(),
+                'published' => (int) $this->publishedArticlesBetween($filter, $start, $end)->count(),
             ];
         }, $days);
     }
@@ -164,13 +155,13 @@ class AnalyticsOverviewService
             [
                 'key' => 'published',
                 'label' => __('admin.analytics.funnel.published'),
-                'count' => (int) $this->filteredArticles($filter)->where('status', 'published')->count(),
+                'count' => (int) $this->publishedArticlesBetween($filter, $filter->start(), $filter->end())->count(),
                 'tone' => 'green',
             ],
             [
                 'key' => 'viewed',
                 'label' => __('admin.analytics.funnel.viewed'),
-                'count' => (int) $this->filteredArticles($filter)->where('view_count', '>', 0)->count(),
+                'count' => $this->viewedArticleCount($filter),
                 'tone' => 'slate',
             ],
         ];
@@ -186,16 +177,6 @@ class AnalyticsOverviewService
      */
     public function distributionSummary(AnalyticsFilter $filter): array
     {
-        if (! $this->hasDistributionTables()) {
-            return [
-                'total' => 0,
-                'synced' => 0,
-                'failed' => 0,
-                'pending' => 0,
-                'rows' => [],
-            ];
-        }
-
         $query = $this->filteredDistributions($filter);
         $rows = (clone $query)
             ->join('distribution_channels as dc', 'article_distributions.distribution_channel_id', '=', 'dc.id')
@@ -230,6 +211,11 @@ class AnalyticsOverviewService
      */
     public function topContent(AnalyticsFilter $filter, int $limit = 10): array
     {
+        $rows = $this->topContentFromViewLogs($filter, $limit);
+        if ($rows !== []) {
+            return $rows;
+        }
+
         return $this->filteredArticles($filter)
             ->leftJoin('categories as c', 'articles.category_id', '=', 'c.id')
             ->orderByDesc('articles.view_count')
@@ -288,12 +274,10 @@ class AnalyticsOverviewService
         $completed = (int) (clone $taskRuns)->where('status', 'completed')->count();
         $failed = (int) (clone $taskRuns)->where('status', 'failed')->count();
         $totalFinished = $completed + $failed;
-        $avg = Schema::hasColumn('task_runs', 'duration_ms')
-            ? (clone $taskRuns)
-                ->where('duration_ms', '>', 0)
-                ->selectRaw('AVG(duration_ms) / 1000.0 as avg_time')
-                ->value('avg_time')
-            : 0;
+        $avg = (clone $taskRuns)
+            ->where('duration_ms', '>', 0)
+            ->selectRaw('AVG(duration_ms) / 1000.0 as avg_time')
+            ->value('avg_time');
 
         return [
             'avg_generation_time' => (float) ($avg ?? 0),
@@ -370,22 +354,13 @@ class AnalyticsOverviewService
     public function materialHealth(): array
     {
         $knowledgeChunks = (int) KnowledgeChunk::query()->count();
-        $vectorColumns = array_values(array_filter([
-            Schema::hasColumn('knowledge_chunks', 'embedding_json') ? 'embedding_json' : null,
-            Schema::hasColumn('knowledge_chunks', 'embedding_model_id') ? 'embedding_model_id' : null,
-            Schema::hasColumn('knowledge_chunks', 'embedding_vector') ? 'embedding_vector' : null,
-        ]));
-        $vectorizedChunks = 0;
-
-        if ($vectorColumns !== []) {
-            $vectorizedChunks = (int) KnowledgeChunk::query()
-                ->where(function ($query) use ($vectorColumns): void {
-                    foreach ($vectorColumns as $column) {
-                        $query->orWhereNotNull($column);
-                    }
-                })
-                ->count();
-        }
+        $vectorizedChunks = (int) KnowledgeChunk::query()
+            ->where(function ($query): void {
+                $query->whereNotNull('embedding_json')
+                    ->orWhereNotNull('embedding_model_id')
+                    ->orWhereNotNull('embedding_vector');
+            })
+            ->count();
 
         return [
             'keyword_libraries' => (int) KeywordLibrary::query()->count(),
@@ -465,12 +440,19 @@ class AnalyticsOverviewService
      */
     private function filteredArticles(AnalyticsFilter $filter): Builder
     {
-        $query = Article::query()
-            ->whereNull('deleted_at')
+        return $this->baseArticleQuery($filter)
             ->whereBetween('articles.created_at', [$filter->start(), $filter->end()]);
+    }
+
+    /**
+     * @return Builder<Article>
+     */
+    private function baseArticleQuery(AnalyticsFilter $filter): Builder
+    {
+        $query = Article::query()->whereNull('articles.deleted_at');
 
         if ($filter->taskId !== null) {
-            $query->where('task_id', $filter->taskId);
+            $query->where('articles.task_id', $filter->taskId);
         }
         if ($filter->categoryId !== null) {
             $query->where('articles.category_id', $filter->categoryId);
@@ -482,15 +464,28 @@ class AnalyticsOverviewService
         return $query;
     }
 
+    /**
+     * @return Builder<Article>
+     */
+    private function publishedArticlesBetween(AnalyticsFilter $filter, Carbon $start, Carbon $end): Builder
+    {
+        return $this->baseArticleQuery($filter)
+            ->where('articles.status', 'published')
+            ->whereBetween('articles.published_at', [$start, $end]);
+    }
+
     private function todayViews(Carbon $today): int
     {
         if (! Schema::hasTable('view_logs')) {
             return 0;
         }
 
-        return (int) DB::table('view_logs')
-            ->whereDate('created_at', $today)
-            ->count();
+        $query = DB::table('view_logs')->whereDate('created_at', $today);
+        if (Schema::hasColumn('view_logs', 'method')) {
+            $query->where('method', 'GET');
+        }
+
+        return (int) $query->count();
     }
 
     /**
@@ -507,18 +502,12 @@ class AnalyticsOverviewService
         return $query;
     }
 
-    private function hasDistributionTables(): bool
-    {
-        return Schema::hasTable('article_distributions') && Schema::hasTable('distribution_channels');
-    }
-
     /**
-     * @return QueryBuilder
+     * @return Builder<ArticleDistribution>
      */
-    private function filteredDistributions(AnalyticsFilter $filter): QueryBuilder
+    private function filteredDistributions(AnalyticsFilter $filter): Builder
     {
-        $query = DB::table('article_distributions')
-            ->whereBetween('article_distributions.created_at', [$filter->start(), $filter->end()]);
+        $query = ArticleDistribution::query()->whereBetween('article_distributions.created_at', [$filter->start(), $filter->end()]);
 
         if ($filter->channelId !== null) {
             $query->where('distribution_channel_id', $filter->channelId);
@@ -526,6 +515,89 @@ class AnalyticsOverviewService
 
         if ($filter->articleId !== null) {
             $query->where('article_id', $filter->articleId);
+        }
+
+        if ($filter->taskId !== null || $filter->categoryId !== null) {
+            $query->whereHas('article', function (Builder $articleQuery) use ($filter): void {
+                if ($filter->taskId !== null) {
+                    $articleQuery->where('task_id', $filter->taskId);
+                }
+                if ($filter->categoryId !== null) {
+                    $articleQuery->where('category_id', $filter->categoryId);
+                }
+            });
+        }
+
+        return $query;
+    }
+
+    private function filteredViewCount(AnalyticsFilter $filter): int
+    {
+        if (! Schema::hasTable('view_logs')) {
+            return (int) $this->filteredArticles($filter)->sum('view_count');
+        }
+
+        return (int) $this->baseViewLogQuery($filter)->count();
+    }
+
+    private function viewedArticleCount(AnalyticsFilter $filter): int
+    {
+        if (! Schema::hasTable('view_logs')) {
+            return (int) $this->filteredArticles($filter)->where('view_count', '>', 0)->count();
+        }
+
+        return (int) $this->baseViewLogQuery($filter)
+            ->whereNotNull('view_logs.article_id')
+            ->whereNull('a.deleted_at')
+            ->distinct()
+            ->count('view_logs.article_id');
+    }
+
+    /**
+     * @return list<object>
+     */
+    private function topContentFromViewLogs(AnalyticsFilter $filter, int $limit): array
+    {
+        if (! Schema::hasTable('view_logs')) {
+            return [];
+        }
+
+        return $this->baseViewLogQuery($filter)
+            ->whereNotNull('view_logs.article_id')
+            ->whereNull('a.deleted_at')
+            ->select('a.id', 'a.title', 'a.slug', 'a.status', 'a.created_at', 'c.name as category_name')
+            ->selectRaw('COUNT(*) as view_count')
+            ->groupBy('a.id', 'a.title', 'a.slug', 'a.status', 'a.created_at', 'c.name')
+            ->orderByDesc('view_count')
+            ->orderByDesc('a.created_at')
+            ->limit($limit)
+            ->get()
+            ->all();
+    }
+
+    private function baseViewLogQuery(AnalyticsFilter $filter): \Illuminate\Database\Query\Builder
+    {
+        $query = DB::table('view_logs')
+            ->leftJoin('articles as a', 'view_logs.article_id', '=', 'a.id')
+            ->leftJoin('categories as c', 'a.category_id', '=', 'c.id')
+            ->whereBetween('view_logs.created_at', [$filter->start(), $filter->end()]);
+
+        if (Schema::hasColumn('view_logs', 'method')) {
+            $query->where('view_logs.method', 'GET');
+        }
+
+        if (Schema::hasColumn('view_logs', 'source') && $filter->logSource !== 'all') {
+            $query->where('view_logs.source', $filter->logSource);
+        }
+
+        if ($filter->articleId !== null) {
+            $query->where('view_logs.article_id', $filter->articleId);
+        }
+        if ($filter->taskId !== null) {
+            $query->where('a.task_id', $filter->taskId);
+        }
+        if ($filter->categoryId !== null) {
+            $query->where('a.category_id', $filter->categoryId);
         }
 
         return $query;

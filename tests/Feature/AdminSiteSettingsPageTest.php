@@ -34,6 +34,67 @@ class AdminSiteSettingsPageTest extends TestCase
             ->assertSee('value="'.AdminWeb::basePath().'"', false);
     }
 
+    public function test_apple_support_theme_is_listed_without_becoming_active_theme(): void
+    {
+        $admin = Admin::query()->create([
+            'username' => 'site_theme_admin',
+            'password' => 'secret-123',
+            'email' => 'site-theme-admin@example.com',
+            'display_name' => 'Site Theme Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.site-settings.index'))
+            ->assertOk()
+            ->assertSee('Apple Support Inspired')
+            ->assertSee('value="apple_support_clone"', false)
+            ->assertDontSee('value="apple_support_clone" class="mt-1 text-blue-600 focus:ring-blue-500" checked', false);
+    }
+
+    public function test_standard_admin_cannot_update_analytics_code(): void
+    {
+        $this->withoutMiddleware(ValidateCsrfToken::class);
+
+        SiteSetting::query()->create([
+            'setting_key' => 'analytics_code',
+            'setting_value' => '<script>existing()</script>',
+        ]);
+
+        $admin = Admin::query()->create([
+            'username' => 'site_analytics_admin',
+            'password' => 'secret-123',
+            'email' => 'site-analytics-admin@example.com',
+            'display_name' => 'Site Analytics Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.site-settings.update'), [
+                'site_name' => 'Frontend Site',
+                'site_subtitle' => '',
+                'site_description' => '',
+                'site_keywords' => '',
+                'copyright_info' => '',
+                'site_logo' => '',
+                'site_favicon' => '',
+                'analytics_code' => '<script>changed()</script>',
+                'seo_title_template' => '{title} - {site_name}',
+                'seo_description_template' => '{description}',
+                'featured_limit' => 6,
+                'per_page' => 12,
+                'admin_base_path' => AdminWeb::basePath(),
+            ])
+            ->assertRedirect(route('admin.site-settings.index'));
+
+        $this->assertSame(
+            '<script>existing()</script>',
+            (string) SiteSetting::query()->where('setting_key', 'analytics_code')->value('setting_value')
+        );
+    }
+
     public function test_sensitive_words_are_managed_under_site_settings(): void
     {
         $this->withoutMiddleware(ValidateCsrfToken::class);

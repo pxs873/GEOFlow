@@ -32,7 +32,9 @@ class WorkerExecutionService
      */
     public function __construct(
         private readonly ApiKeyCrypto $apiKeyCrypto,
-        private readonly KnowledgeChunkSyncService $knowledgeChunkSyncService
+        private readonly KnowledgeChunkSyncService $knowledgeChunkSyncService,
+        private readonly KnowledgeRetrievalService $knowledgeRetrievalService,
+        private readonly DistributionOrchestrator $distributionOrchestrator
     ) {}
 
     /**
@@ -52,6 +54,8 @@ class WorkerExecutionService
 
         $publishResult = $this->publishDueDraftArticle($task);
         if ($publishResult !== null) {
+            $this->distributionOrchestrator->enqueueForArticle((int) $publishResult['article_id']);
+
             return $publishResult;
         }
 
@@ -186,7 +190,7 @@ class WorkerExecutionService
             $freshTask = Task::query()
                 ->whereKey((int) $task->id)
                 ->lockForUpdate()
-                ->first(['id', 'status', 'schedule_enabled', 'publish_interval', 'next_publish_at']);
+                ->first(['id', 'status', 'schedule_enabled', 'publish_interval', 'next_publish_at', 'publish_scope']);
             if (! $freshTask || ($freshTask->status ?? 'paused') !== 'active' || (int) ($freshTask->schedule_enabled ?? 1) !== 1) {
                 throw new RuntimeException('任务未激活');
             }
@@ -208,7 +212,9 @@ class WorkerExecutionService
                 return null;
             }
 
-            $workflow = ArticleWorkflow::normalizeState('published', (string) ($article->review_status ?: 'approved'));
+            $publishScope = (string) ($freshTask->publish_scope ?? 'local_and_distribution');
+            $targetStatus = $publishScope === 'distribution_only' ? 'private' : 'published';
+            $workflow = ArticleWorkflow::normalizeState($targetStatus, (string) ($article->review_status ?: 'approved'));
             Article::query()->whereKey((int) $article->id)->update([
                 'status' => $workflow['status'],
                 'review_status' => $workflow['review_status'],
@@ -592,7 +598,12 @@ class WorkerExecutionService
             $renderedPrompt = $this->appendSmartPromptContext($renderedPrompt, $title, $keyword, $knowledgeContext);
         }
 
-        return trim($renderedPrompt)."\n\n".$this->finalPromptInstruction($renderedPrompt);
+        $finalInstructions = array_values(array_filter([
+            $this->knowledgeCitationInstruction($renderedPrompt, $knowledgeContext),
+            $this->finalPromptInstruction($renderedPrompt),
+        ], static fn (string $instruction): bool => trim($instruction) !== ''));
+
+        return trim($renderedPrompt)."\n\n".implode("\n", $finalInstructions);
     }
 
     private function promptHasKnownContextVariables(string $prompt): bool
@@ -687,6 +698,19 @@ class WorkerExecutionService
         return '请直接输出最终文章正文（Markdown），不要重复提示词、不要输出占位符。';
     }
 
+    private function knowledgeCitationInstruction(string $prompt, string $knowledgeContext): string
+    {
+        if (trim($knowledgeContext) === '') {
+            return '';
+        }
+
+        if ($this->isLikelyEnglishPrompt($prompt)) {
+            return 'Knowledge citation rule: when using facts, data, or business judgments from the reference knowledge, cite the evidence ID such as [K1] in the relevant sentence. If the evidence is insufficient, use cautious wording and do not invent sources or conclusions.';
+        }
+
+        return '知识库引用要求：涉及事实、数据或业务判断时，优先依据参考知识中的 [K1] 等证据编号，并在相关句子后标注证据编号；证据不足时不要编造来源或结论。';
+    }
+
     private function isLikelyEnglishPrompt(string $prompt): bool
     {
         preg_match_all('/\p{Han}/u', $prompt, $cjkMatches);
@@ -723,9 +747,14 @@ class WorkerExecutionService
         }
 
         $query = trim($title."\n".$keyword);
-        $context = $this->fetchKnowledgeContextFromChunks($knowledgeBaseId, $query, 4, 2400);
+        $context = $this->knowledgeRetrievalService->retrieveContext($knowledgeBaseId, $query, 5, 3200);
         if ($context !== '') {
             return $context;
+        }
+
+        $chunkCount = KnowledgeChunk::query()->where('knowledge_base_id', $knowledgeBaseId)->count();
+        if ($chunkCount > 0) {
+            return '';
         }
 
         return mb_strlen($content, 'UTF-8') > 2400 ? mb_substr($content, 0, 2400, 'UTF-8') : $content;
@@ -746,14 +775,25 @@ class WorkerExecutionService
         $rows = KnowledgeChunk::query()
             ->where('knowledge_base_id', $knowledgeBaseId)
             ->orderBy('chunk_index')
-            ->get(['chunk_index', 'content', 'embedding_json'])
+            ->get(['chunk_index', 'content', 'embedding_json', 'embedding_model_id', 'embedding_dimensions'])
             ->all();
         if ($rows === []) {
             return '';
         }
 
         $queryTerms = $this->termFrequencies($query);
-        $queryVector = $this->decodeVector(json_encode($this->buildFallbackVector($query, 256)));
+        $hasRealEmbeddingRows = collect($rows)->contains(
+            fn ($row): bool => $this->chunkHasRealEmbedding($row)
+        );
+        $useRealEmbeddingScore = false;
+        $queryVector = [];
+        if ($hasRealEmbeddingRows && trim($query) !== '') {
+            $queryVector = $this->knowledgeChunkSyncService->generateQueryEmbeddingVector($query);
+            $useRealEmbeddingScore = $queryVector !== [];
+        }
+        if ($queryVector === []) {
+            $queryVector = $this->decodeVector(json_encode($this->buildFallbackVector($query, 256)));
+        }
 
         $scored = [];
         foreach ($rows as $row) {
@@ -765,7 +805,10 @@ class WorkerExecutionService
             $vector = $this->decodeVector((string) ($row->embedding_json ?? ''));
             $chunkTerms = $this->termFrequencies($content);
             $lexicalScore = $this->lexicalScore($queryTerms, $chunkTerms);
-            $vectorScore = $this->dotProduct($queryVector, $vector);
+            $chunkUsesRealEmbedding = $this->chunkHasRealEmbedding($row);
+            $vectorScore = ($useRealEmbeddingScore === $chunkUsesRealEmbedding)
+                ? $this->dotProduct($queryVector, $vector)
+                : 0.0;
             $score = ($vectorScore * 0.75) + ($lexicalScore * 0.25);
 
             $scored[] = [
@@ -782,6 +825,15 @@ class WorkerExecutionService
         });
 
         return $this->composeKnowledgeContext($scored, $limit, $maxChars);
+    }
+
+    /**
+     * 判断 chunk 是否保存了真实 embedding，而不是 fallback hash 向量。
+     */
+    private function chunkHasRealEmbedding(object $row): bool
+    {
+        return (int) ($row->embedding_model_id ?? 0) > 0
+            && (int) ($row->embedding_dimensions ?? 0) > 0;
     }
 
     /**
@@ -896,8 +948,13 @@ class WorkerExecutionService
             throw new RuntimeException('AI 生成失败: '.OpenAiRuntimeProvider::normalizeApiException($exception, $providerUrl), 0, $exception);
         }
 
-        $content = trim((string) ($response->text ?? ''));
+        $rawContent = (string) ($response->text ?? '');
+        $content = OpenAiRuntimeProvider::normalizeGeneratedText($rawContent);
         if ($content === '') {
+            if (OpenAiRuntimeProvider::looksLikeSseCompletionPayload($rawContent)) {
+                throw new RuntimeException('AI 返回空流式响应，未生成正文内容，请重试或检查模型流式输出兼容性');
+            }
+
             throw new RuntimeException('AI返回空正文');
         }
 

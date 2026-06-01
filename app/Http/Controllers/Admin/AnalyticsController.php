@@ -5,13 +5,13 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Article;
 use App\Models\Category;
+use App\Models\DistributionChannel;
 use App\Models\Task;
 use App\Services\Admin\Analytics\AnalyticsFilter;
 use App\Services\Admin\Analytics\AnalyticsLogQueryService;
 use App\Services\Admin\Analytics\AnalyticsOverviewService;
 use App\Support\AdminWeb;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 use Throwable;
@@ -69,7 +69,7 @@ class AnalyticsController extends Controller
     {
         return [
             'channels' => Schema::hasTable('distribution_channels')
-                ? DB::table('distribution_channels')->orderBy('name')->select('id', 'name')->get()
+                ? DistributionChannel::query()->orderBy('name')->select('id', 'name')->get()
                 : collect(),
             'tasks' => Task::query()
                 ->orderByDesc('created_at')
@@ -119,7 +119,6 @@ class AnalyticsController extends Controller
                 'ai_calls' => 0,
                 'distribution_failed' => 0,
                 'distribution_pending' => 0,
-                'distribution_synced' => 0,
                 'total_views' => 0,
             ],
             'publicationTrend' => [],

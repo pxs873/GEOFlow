@@ -143,6 +143,29 @@
                                         $articleLimit = max(1, (int) ($task['article_limit'] ?? $task['draft_limit'] ?? 10));
                                         $createdForProgress = min($articleLimit, (int) ($task['created_count'] ?? $task['total_articles'] ?? 0));
                                         $progressPercent = (int) floor(($createdForProgress / $articleLimit) * 100);
+                                        $distributionTotal = (int) ($task['distribution_total_count'] ?? 0);
+                                        $distributionSynced = (int) ($task['distribution_synced_count'] ?? 0);
+                                        $distributionFailed = (int) ($task['distribution_failed_count'] ?? 0);
+                                        $distributionPending = max(0, $distributionTotal - $distributionSynced - $distributionFailed);
+                                        $taskDistributionBadge = null;
+                                        if ($distributionTotal > 0) {
+                                            if ($distributionFailed > 0) {
+                                                $taskDistributionBadge = [
+                                                    'label' => __('admin.distribution.task_status.failed', ['count' => $distributionFailed]),
+                                                    'class' => 'bg-red-50 text-red-700 ring-red-100',
+                                                ];
+                                            } elseif ($distributionSynced >= $distributionTotal) {
+                                                $taskDistributionBadge = [
+                                                    'label' => __('admin.distribution.task_status.synced', ['count' => $distributionTotal]),
+                                                    'class' => 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+                                                ];
+                                            } else {
+                                                $taskDistributionBadge = [
+                                                    'label' => __('admin.distribution.task_status.queued', ['count' => $distributionPending]),
+                                                    'class' => 'bg-sky-50 text-sky-700 ring-sky-100',
+                                                ];
+                                            }
+                                        }
                                     @endphp
                                     <div id="task-created-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.created_of_limit', ['created' => (int) ($task['created_count'] ?? $task['total_articles'] ?? 0), 'limit' => $articleLimit]) }}</div>
                                     <div id="task-published-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.published_articles', ['count' => (int) ($task['published_articles'] ?? 0)]) }}</div>
@@ -150,6 +173,14 @@
                                     <div class="mt-2 h-1.5 w-28 overflow-hidden rounded-full bg-gray-200">
                                         <div id="task-progress-{{ (int) $task['id'] }}" class="h-full rounded-full bg-blue-600" style="width: {{ $progressPercent }}%"></div>
                                     </div>
+                                    @if($taskDistributionBadge !== null)
+                                        <div class="mt-2">
+                                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 {{ $taskDistributionBadge['class'] }}">
+                                                <i data-lucide="send" class="mr-1 h-3 w-3"></i>
+                                                {{ $taskDistributionBadge['label'] }}
+                                            </span>
+                                        </div>
+                                    @endif
                                 </td>
                                 <td class="px-5 py-4 align-top whitespace-nowrap text-sm text-gray-500">
                                     <span id="task-loop-{{ (int) $task['id'] }}">{{ __('admin.tasks.label.loop_times', ['count' => (int) ($task['loop_count'] ?? 0)]) }}</span>
@@ -370,8 +401,8 @@
 <script>
 const TASK_I18N = @json($taskI18n, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
 const TASK_REALTIME = @json($taskRealtime, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-const TASK_HEALTH_URL = @js(route('admin.tasks.health'));
-const TASK_BATCH_URL = @js(route('admin.tasks.batch'));
+const TASK_HEALTH_URL = @js(route('admin.tasks.health', [], false));
+const TASK_BATCH_URL = @js(route('admin.tasks.batch', [], false));
 const TASK_INITIAL_OVERVIEW = @json($taskInitialOverview, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
 const TASK_TEXT = {
     workerNone: @js(__('admin.tasks.worker.none')),
@@ -619,9 +650,15 @@ function initTaskRealtime() {
         wssPort: TASK_REALTIME.port || 443,
         forceTLS: TASK_REALTIME.scheme === 'https',
         enabledTransports: ['ws', 'wss'],
+        authEndpoint: @js(url('/broadcasting/auth')),
+        auth: {
+            headers: {
+                'X-CSRF-TOKEN': @js(csrf_token()),
+            },
+        },
     });
 
-    const channel = pusher.subscribe('admin.tasks');
+    const channel = pusher.subscribe('private-admin.tasks');
     channel.bind('tasks.overview.updated', (payload) => {
         applyOverview(payload);
     });
