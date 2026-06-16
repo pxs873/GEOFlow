@@ -18,11 +18,19 @@ export default function Home() {
   return (
     <main className="flex-1">
       <HeroSection
-        eyebrow="AI Search Visibility"
-        title="让你的品牌，被 AI 搜索看见、引用和推荐"
-        description="GEOFlow 帮助中国出海 AI / SaaS / B2B 软件公司，检测并提升品牌在 ChatGPT、Perplexity、Google AI、DeepSeek、Kimi、豆包等 AI 搜索结果中的出现率、引用率和推荐率。"
+        eyebrow="GEOFlow Editorial Desk"
+        title="让你的品牌，在 AI 搜索里成为被看见、被引用、被推荐的候选"
+        description="GEOFlow 用更像编辑部与研究台的方式，帮助中国出海 AI / SaaS / B2B 软件公司拆清楚：AI 为什么没提你、为什么更常提竞品、应该先补哪些品牌信号。"
         primaryCta={{ href: "/free-audit", label: "免费获取 AI 搜索曝光诊断" }}
         secondaryCta={{ href: "/audit", label: "查看体检报告示例" }}
+        sidebarEyebrow="Editorial promise"
+        sidebarTitle="先把判断做扎实，再决定下一步投什么资源"
+        sidebarDescription="我们不照搬旧站内容，只借用那种栏目页、专题页、编辑部入口的阅读感，让 GEOFlow 首页更像一个可信的研究入口，而不是只像一个泛 SaaS 仪表盘。"
+        sidebarBullets={[
+          "先判断品牌有没有进入 AI 的候选名单，而不是只看零散流量词。",
+          "把 FAQ、案例、行业报告和第三方提及整理成更容易被 AI 复述的资产。",
+          "让客户在首屏就知道 GEOFlow 既能解释原因，也能给出下一步动作。",
+        ]}
         aside={<DashboardMockup />}
       />
 
@@ -39,7 +47,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-[linear-gradient(180deg,rgba(235,243,255,0.55),rgba(255,255,255,0.9))]">
+      <section className="bg-[linear-gradient(180deg,rgba(238,242,232,0.9),rgba(255,254,249,0.96))]">
         <div className="mx-auto max-w-7xl px-6 py-18 md:px-10">
           <SectionHeading
             eyebrow="What GEOFlow Does"
@@ -78,7 +86,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-slate-950 text-white">
+      <section className="bg-[var(--color-brand-deep)] text-white">
         <div className="mx-auto max-w-7xl px-6 py-18 md:px-10">
           <SectionHeading
             eyebrow="Execution Flow"
@@ -121,7 +129,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-[linear-gradient(180deg,rgba(243,247,255,0.9),rgba(255,255,255,1))]">
+      <section className="bg-[linear-gradient(180deg,rgba(245,248,241,0.94),rgba(255,254,249,1))]">
         <div className="mx-auto max-w-7xl px-6 py-18 md:px-10">
           <SectionHeading
             eyebrow="Reports"

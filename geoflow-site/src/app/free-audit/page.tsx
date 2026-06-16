@@ -11,13 +11,13 @@ export const metadata: Metadata = {
 export default function FreeAuditPage() {
   return (
     <main className="flex-1">
-      <section className="mx-auto max-w-7xl px-6 py-18 md:px-10">
-        <div className="grid gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
+      <section className="mx-auto max-w-7xl px-6 py-12 md:px-10 md:py-18">
+        <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-start lg:gap-10">
           <div className="space-y-6">
             <SectionHeading
               eyebrow="Free Audit"
               title="先把品牌、官网和竞品交给 GEOFlow，看清 AI 为什么没有稳定推荐你"
-              description="第一版表单先承担线索收集和问题初筛。提交后，你可以用表单回执或占位逻辑继续接入 Formspree。"
+              description="这一版表单已经按 Formspree 提交链路收口。你提交后，会进入确认页，方便我们继续做线索初筛和后续联系。"
             />
             <div className="grid gap-4">
               <div className="rounded-3xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-card)]">
@@ -29,9 +29,9 @@ export default function FreeAuditPage() {
                 </ul>
               </div>
               <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-6">
-                <h3 className="text-lg font-semibold">当前支持的渠道</h3>
+                <h3 className="text-lg font-semibold">提交后会发生什么</h3>
                 <p className="mt-3 text-sm leading-7 text-[var(--color-ink-soft)]">
-                  ChatGPT、Perplexity、Google AI、DeepSeek、Kimi、豆包。
+                  GEOFlow 会先做基础初筛，再通过你留下的邮箱或微信联系你，确认是否进入下一步诊断。
                 </p>
               </div>
             </div>

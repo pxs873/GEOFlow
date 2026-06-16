@@ -7,7 +7,7 @@ type MetricCardProps = {
 
 export function MetricCard({ label, value, detail, delta }: MetricCardProps) {
   return (
-    <article className="rounded-3xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-card)]">
+    <article className="rounded-[2rem] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-card)]">
       <div className="flex items-center justify-between gap-4">
         <span className="text-sm font-medium text-[var(--color-ink-soft)]">{label}</span>
         <span className="rounded-full bg-[var(--color-surface-muted)] px-3 py-1 text-xs font-semibold text-[var(--color-brand)]">

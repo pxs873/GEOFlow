@@ -26,6 +26,8 @@ export const siteConfig = {
   description:
     "GEOFlow 帮助中国出海 AI / SaaS / B2B 软件公司，提升品牌在 AI 搜索结果中的出现率、引用率和推荐率。",
   siteUrl: normalizeSiteUrl(envSiteUrl),
+  tagline: "Editorial-style AI search visibility guidance for China-to-global software teams.",
+  intakeLabel: "Intake: use the free audit form",
 };
 
 export const navItems = [
