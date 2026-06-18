@@ -23,7 +23,7 @@
 上线前需要配置：
 
 ```env
-NEXT_PUBLIC_SITE_URL=https://<正式域名>
+NEXT_PUBLIC_SITE_URL=https://globalentrypro.com
 NEXT_PUBLIC_FORMSPREE_ENDPOINT=https://formspree.io/f/<form-id>
 ```
 
@@ -31,6 +31,7 @@ NEXT_PUBLIC_FORMSPREE_ENDPOINT=https://formspree.io/f/<form-id>
 
 - `NEXT_PUBLIC_SITE_URL` 用于 `metadataBase`、Open Graph、`robots.txt`、`sitemap.xml`
 - `NEXT_PUBLIC_FORMSPREE_ENDPOINT` 用于 `/free-audit` 真实提交
+- 旧域名已确认可复用：`globalentrypro.com`
 
 ### 2. 部署权限
 
@@ -62,9 +63,19 @@ NEXT_PUBLIC_FORMSPREE_ENDPOINT=https://formspree.io/f/<form-id>
 ## 当前阻塞
 
 - 还没有真实的 `NEXT_PUBLIC_FORMSPREE_ENDPOINT`
-- 还没有正式域名值可写入 `NEXT_PUBLIC_SITE_URL`
 - 原仓库没有写权限
 - 本机没有 `vercel` CLI
+
+## 域名现状
+
+- 当前旧域名：`https://globalentrypro.com`
+- `globalentrypro.com` 和 `www.globalentrypro.com` 当前都解析到：`43.161.240.101`
+- 当前线上返回的是旧站 Nginx / Laravel 响应
+
+含义：
+
+- 域名本身不用更换
+- 上线新官网时，只需要把该域名切到新的 Vercel 项目
 
 ## 推荐下一步
 
